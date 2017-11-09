@@ -6,6 +6,7 @@
 
 
 import java.awt.Color;
+import java.util.*;
 
 class Gate {
 
@@ -14,7 +15,7 @@ class Gate {
     boolean isopen = false;
 
     public void pass() throws InterruptedException {
-        g.P(); 
+        g.P();
         g.V();
     }
 
@@ -26,7 +27,7 @@ class Gate {
 
     public void close() {
         try { e.P(); } catch (InterruptedException e) {}
-        if (isopen) { 
+        if (isopen) {
             try { g.P(); } catch (InterruptedException e) {}
             isopen = false;
         }
@@ -50,12 +51,62 @@ class Car extends Thread {
 
 
     int speed;                       // Current car speed
-    Pos curpos;                      // Current position 
+    Pos curpos;                      // Current position
     Pos newpos;                      // New position to go to
 
-    public Car(int no, CarDisplayI cd, Gate g) {
+    //SOFYA'S CODE
+
+    //static alley object
+    static Alley alley = new Alley();
+    //customizable position for alley entrance
+    Pos alleyenter;
+    //customizable position for alley exit
+    Pos alleyleave;
+
+    //static map of positions to their semaphores
+    static CurPosMap curMap = new CurPosMap();
+
+    //barrier for all cars
+    Barrier barrier;
+    //customizable position for barrier stop
+    Pos barrierstop;
+
+    //END
+
+    //SOFYA'S CODE -- added barrier to parameters
+    public Car(int no, CarDisplayI cd, Gate g, Barrier barrier) {
 
         this.no = no;
+        this.barrier = barrier;
+
+        //SOFYA'S CODE
+
+        //customizing the alley entrance and exit positions
+        switch(no) {
+            case 0:
+                barrierstop = new Pos(5, 3);
+                break;
+            case 1:
+            case 2:
+                alleyenter = new Pos(2, 0);
+                alleyleave = new Pos(9, 1);
+                barrierstop = new Pos(5, 0);
+                break;
+            case 3:
+            case 4:
+                alleyenter = new Pos(1, 2);
+                alleyleave = new Pos(9, 1);
+                barrierstop = new Pos(5, 0);
+                break;
+            default:
+                alleyenter = new Pos(10, 0);
+                alleyleave = new Pos(0, 2);
+                barrierstop = new Pos(6, 0);
+                break;
+        }
+
+        //END
+
         this.cd = cd;
         mygate = g;
         startpos = cd.getStartPos(no);
@@ -65,13 +116,13 @@ class Car extends Thread {
 
         // do not change the special settings for car no. 0
         if (no==0) {
-            basespeed = 0;  
-            variation = 0; 
-            setPriority(Thread.MAX_PRIORITY); 
+            basespeed = 0;
+            variation = 0;
+            setPriority(Thread.MAX_PRIORITY);
         }
     }
 
-    public synchronized void setSpeed(int speed) { 
+    public synchronized void setSpeed(int speed) {
         if (no != 0 && speed >= 0) {
             basespeed = speed;
         }
@@ -79,7 +130,7 @@ class Car extends Thread {
             cd.println("Illegal speed settings");
     }
 
-    public synchronized void setVariation(int var) { 
+    public synchronized void setVariation(int var) {
         if (no != 0 && 0 <= var && var <= 100) {
             variation = var;
         }
@@ -87,24 +138,28 @@ class Car extends Thread {
             cd.println("Illegal variation settings");
     }
 
-    synchronized int chooseSpeed() { 
+    synchronized int chooseSpeed() {
         double factor = (1.0D+(Math.random()-0.5D)*2*variation/100);
         return (int) Math.round(factor*basespeed);
     }
 
     private int speed() {
         // Slow down if requested
-        final int slowfactor = 3;  
+        final int slowfactor = 3;
         return speed * (cd.isSlow(curpos)? slowfactor : 1);
     }
 
-    Color chooseColor() { 
-        return Color.blue; // You can get any color, as longs as it's blue 
+    Color chooseColor() {
+        return Color.blue; // You can get any color, as longs as it's blue
     }
 
     Pos nextPos(Pos pos) {
         // Get my track from display
         return cd.nextPos(no,pos);
+    }
+
+    Pos curPos() {
+        return curpos;
     }
 
     boolean atGate(Pos pos) {
@@ -115,27 +170,66 @@ class Car extends Thread {
         try {
 
             speed = chooseSpeed();
+
+            //SOFYA'S CODE
+            //lock the semaphore for the starting position of the car
+            curMap.get(startpos).P();
+            //END
+
             curpos = startpos;
             cd.mark(curpos,col,no);
 
-            while (true) { 
+            while (true) {
                 sleep(speed());
-  
-                if (atGate(curpos)) { 
-                    mygate.pass(); 
+
+                if (atGate(curpos)) {
+                    mygate.pass();
                     speed = chooseSpeed();
                 }
-                	
+
                 newpos = nextPos(curpos);
-                
-                //  Move to new position 
+
+                //SOFYA'S CODE
+
+                //if the next position is the entrance to alley, enter
+                //else if the exit to alley, exit
+                if (newpos.equals(alleyenter)) {
+                    alley.enter(this.no);
+                } else if (newpos.equals(alleyleave)) {
+                    alley.leave(this.no);
+                }
+                //if the next position is past the barrier, sync
+                if (this.no != 0) {
+                    if (newpos.row == barrierstop.row
+                        && newpos.col != 0) {
+                            barrier.sync(this.no);
+                    }
+                } else {
+                    if (newpos.equals(barrierstop)) {
+                        barrier.sync(this.no);
+                    }
+                }
+
+                //lock the next position
+                curMap.get(newpos).P();
+
+                //END
+
+                //  Move to new position
                 cd.clear(curpos);
                 cd.mark(curpos,newpos,col,no);
                 sleep(speed());
+
+                //SOFYA'S CODE
+                //release the previous position
+                curMap.get(curpos).V();
+                //END
+
                 cd.clear(curpos,newpos);
                 cd.mark(newpos,col,no);
 
                 curpos = newpos;
+
             }
 
         } catch (Exception e) {
@@ -147,75 +241,295 @@ class Car extends Thread {
 
 }
 
+//SOFYA'S CODE
+class Alley {
+
+    private Semaphore a; //alley
+    private Semaphore down; //going down the alley
+    private int num;
+
+    public Alley() {
+        //1 means released, no car is there
+        a = new Semaphore(1);
+        down = new Semaphore(1);
+        //number of cars in the alley
+        //if 0 -- no cars, if > 0, there are cars going down
+        //if < 0, there are cars going up
+        num = 0;
+    }
+
+    public void enter(int no)
+    throws InterruptedException {
+        switch (no) {
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                //variable to control the 2 entrances to the alley
+                //on the way down
+                int doubleEntrance = 0;
+
+                //cars are already going down
+                if (num > 0) {
+                    //increment the cars
+                    //alley is already locked
+                    num++;
+                //else if 0 (no cars) or < 0 (cars going up)
+                //wait and then lock the alley
+                } else {
+                    //deciding which entrance to the alley opens first
+                    //(1, 2) for cars 4 and 3 or (0, 1) for cars 2 and 1
+                    down.P();
+                    if (num <= 0) {
+                        //locking the alley
+                        a.P();
+                        //increment the cars
+                        num++;
+                        //second entrance shouldn't try to lock the alley now
+                        doubleEntrance = 1;
+                    }
+                    //release entrance decision
+                    down.V();
+                    //increment cars if entering second
+                    if (doubleEntrance == 0) {
+                        num++;
+                    }
+                }
+                break;
+            default:
+                //cars are already going up
+                if (num < 0) {
+                    //increment the cars (decrement bc opposite direction)
+                    //alley is already locked
+                    num--;
+                //else if 0 (no cars) or > 0 (cars going down)
+                //wait and then lock the alley
+                } else {
+                    a.P();
+                    //increment cars (decrement)
+                    num--;
+                }
+                break;
+        }
+    }
+
+    public void leave(int no) {
+        //decrement cars (sign means which direction they're going)
+        switch(no) {
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                num--;
+                if (num == 0) {
+                    //release the alley
+                    a.V();
+                }
+                break;
+            default:
+                num++;
+                if (num == 0) {
+                    //release the alley
+                    a.V();
+                }
+                break;
+        }
+    }
+
+}
+
+class Barrier {
+
+    Semaphore s1;
+    Semaphore s2;
+    int atBarrier;
+    boolean active = false;
+    int numcars;
+
+    public Barrier() {
+        //semaphore to mark the car arrived
+        s1 = new Semaphore(1);
+        //waiting for everyone
+        s2 = new Semaphore(0);
+        atBarrier = 0;
+        numcars = 8; //default, without no. 0
+    }
+
+    public void sync(int no)
+    throws InterruptedException{
+        if (active) {
+            s1.P(); //arrived
+            atBarrier++; //increment number of cars at barrier
+
+            //if everyone has arrived
+            if (atBarrier == numcars) {
+                atBarrier--; //last one didn't do s2.P(), so isn't waiting
+                while (atBarrier > 0) {
+                    s2.V(); //release one by one
+                    atBarrier--;
+                }
+                s1.V(); //reset to defaults
+            //if not everyone has arrived
+            } else {
+                //release arrived flag
+                s1.V();
+                //start waiting for everyone else
+                s2.P();
+            }
+
+        }
+    }
+
+    public void on() {
+        active = true;
+        s1 = new Semaphore(1);
+        s2 = new Semaphore(0);
+    }
+
+    public void off() {
+        active = false;
+        while (atBarrier > 0) {
+            s2.V(); //release waiting cars one by one
+            atBarrier--;
+        }
+        s1.V(); //reset to defaults
+    }
+
+    public boolean isOn() {
+        return active;
+    }
+
+    public void setOn() {
+        active = true;
+    }
+
+    public void setNumcars(int n) {
+        this.numcars = n;
+    }
+
+}
+
+class CurPosMap {
+
+    //map from positions to their semaphores
+    private HashMap<Pos, Semaphore> map;
+
+    public CurPosMap() {
+        map = new HashMap<Pos, Semaphore>();
+        //defaulting to semaphores of 1
+        for (int i = 0; i < 11; i++) {
+            for (int j = 0; j < 12; j++) {
+                map.put(new Pos(i, j), new Semaphore(1));
+            }
+        }
+
+    }
+
+    //getter for a semaphore
+    public Semaphore get(Pos position) {
+        return map.get(position);
+    }
+
+}
+//END
+
 public class CarControl implements CarControlI{
 
     CarDisplayI cd;           // Reference to GUI
     Car[]  car;               // Cars
     Gate[] gate;              // Gates
+    Barrier barrier;
 
     public CarControl(CarDisplayI cd) {
         this.cd = cd;
         car  = new  Car[9];
         gate = new Gate[9];
+        barrier = new Barrier();
 
         for (int no = 0; no < 9; no++) {
             gate[no] = new Gate();
-            car[no] = new Car(no,cd,gate[no]);
+            //SOFYA'S CODE -- added barrier to parameters
+            car[no] = new Car(no,cd,gate[no], barrier);
             car[no].start();
-        } 
+        }
     }
 
-   public void startCar(int no) {
+    public void startCar(int no) {
+        //SOFYA'S CODE
+        //in case the cars were stopped and then started again,
+        //but the barrier is still supposed to be on
+        if (no > 0) {
+            if (barrier.isOn()) {
+                barrier.on();
+            }
+        }
+        //END
         gate[no].open();
+
+        //SOFYA'S CODE
+        //so that the barrier knows how many cars to expect
+        if (no == 0) {
+            barrier.setNumcars(9);
+        }
     }
 
     public void stopCar(int no) {
+        //SOFYA'S CODE
+        if (no > 0) {
+            if (barrier.isOn()) {
+                barrier.off();
+                barrier.setOn();
+            }
+        }
+        //END
+
         gate[no].close();
+
+        //SOFYA'S CODE
+        //so that the barrier knows how many cars to expect
+        if (no == 0) {
+            barrier.setNumcars(8);
+        }
+        //END
     }
 
-    public void barrierOn() { 
-        cd.println("Barrier On not implemented in this version");
+    public void barrierOn() {
+        barrier.on();
     }
 
-    public void barrierOff() { 
-        cd.println("Barrier Off not implemented in this version");
+    public void barrierOff() {
+        barrier.off();
     }
 
-    public void barrierShutDown() { 
+    public void barrierShutDown() {
         cd.println("Barrier shut down not implemented in this version");
         // This sleep is for illustrating how blocking affects the GUI
         // Remove when shutdown is implemented.
         try { Thread.sleep(3000); } catch (InterruptedException e) { }
-        // Recommendation: 
+        // Recommendation:
         //   If not implemented call barrier.off() instead to make graphics consistent
     }
 
-    public void setLimit(int k) { 
+    public void setLimit(int k) {
         cd.println("Setting of bridge limit not implemented in this version");
     }
 
-    public void removeCar(int no) { 
+    public void removeCar(int no) {
         cd.println("Remove Car not implemented in this version");
     }
 
-    public void restoreCar(int no) { 
+    public void restoreCar(int no) {
         cd.println("Restore Car not implemented in this version");
     }
 
     /* Speed settings for testing purposes */
 
-    public void setSpeed(int no, int speed) { 
+    public void setSpeed(int no, int speed) {
         car[no].setSpeed(speed);
     }
 
-    public void setVariation(int no, int var) { 
+    public void setVariation(int no, int var) {
         car[no].setVariation(var);
     }
 
 }
-
-
-
-
-
-
