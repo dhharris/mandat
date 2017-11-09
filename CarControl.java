@@ -269,15 +269,15 @@ class Alley {
         else
             goingUp = true;
         count++;
+        access.signal();
     }
 
     private void radioOut(int no) {
         // Let people know when you leave
-        if (--count == 0) {
+        if (--count == 0)
             // Last car sends signal to those waiting that it's okay to enter
             goingUp = goingDown = false;
-            access.signal();
-        }
+        access.signal();
     }
 
     public void enter(int no) throws InterruptedException {
