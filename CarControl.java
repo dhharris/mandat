@@ -6,6 +6,7 @@
 
 import java.awt.Color;
 import java.util.*;
+import java.util.concurrent.locks.*;
 
 class Gate {
 
@@ -241,97 +242,63 @@ class Car extends Thread {
     }
 }
 
-// SOFYA'S CODE
 class Alley {
+    private final Lock mut = new ReentrantLock();
+    private final Condition access = mut.newCondition();
+    private boolean goingUp;
+    private boolean goingDown;
+    private int count; // Number of vehicles in alley
 
-    private Semaphore a;    // alley
-    private Semaphore down; // going down the alley
-    private int num;
 
     public Alley() {
-        // 1 means released, no car is there
-        a = new Semaphore(1);
-        down = new Semaphore(1);
-        // number of cars in the alley
-        // if 0 -- no cars, if > 0, there are cars going down
-        // if < 0, there are cars going up
-        num = 0;
+        goingUp = goingDown = false;
+        count = 0;
     }
 
-    public void enter(int no) throws InterruptedException {
-        switch (no) {
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-            // variable to control the 2 entrances to the alley
-            // on the way down
-            int doubleEntrance = 0;
+    private boolean canEnter(int no) {
+        if (no <= 4)
+            return !goingUp; // cars 1-4 go down only
+        else
+            return !goingDown;
+    }
 
-            // cars are already going down
-            if (num > 0) {
-                // increment the cars
-                // alley is already locked
-                num++;
-                // else if 0 (no cars) or < 0 (cars going up)
-                // wait and then lock the alley
-            } else {
-                // deciding which entrance to the alley opens first
-                //(1, 2) for cars 4 and 3 or (0, 1) for cars 2 and 1
-                down.P();
-                if (num <= 0) {
-                    // locking the alley
-                    a.P();
-                    // increment the cars
-                    num++;
-                    // second entrance shouldn't try to lock the alley now
-                    doubleEntrance = 1;
-                }
-                // release entrance decision
-                down.V();
-                // increment cars if entering second
-                if (doubleEntrance == 0) {
-                    num++;
-                }
-            }
-            break;
-        default:
-            // cars are already going up
-            if (num < 0) {
-                // increment the cars (decrement bc opposite direction)
-                // alley is already locked
-                num--;
-                // else if 0 (no cars) or > 0 (cars going down)
-                // wait and then lock the alley
-            } else {
-                a.P();
-                // increment cars (decrement)
-                num--;
-            }
-            break;
+    private void radioIn(int no) {
+        // Let people know when you enter the alley
+        if (no <= 4)
+            goingDown = true;
+        else
+            goingUp = true;
+        count++;
+    }
+
+    private void radioOut(int no) {
+        // Let people know when you leave
+        if (--count == 0) {
+            // Last car sends signal to those waiting that it's okay to enter
+            goingUp = goingDown = false;
+            access.signal();
         }
     }
 
-    public void leave(int no) {
-        // decrement cars (sign means which direction they're going)
-        switch (no) {
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-            num--;
-            if (num == 0) {
-                // release the alley
-                a.V();
-            }
-            break;
-        default:
-            num++;
-            if (num == 0) {
-                // release the alley
-                a.V();
-            }
-            break;
+    public void enter(int no) throws InterruptedException {
+        mut.lock();
+
+        try {
+            while (!canEnter(no))
+                access.await();            
+            radioIn(no);
+        } finally {
+            mut.unlock();
+        }
+    }
+
+    public void leave(int no) throws InterruptedException {
+        mut.lock();
+        
+        try {
+            radioOut(no); 
+        } finally {
+            mut.unlock();    
         }
     }
 }
