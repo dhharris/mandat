@@ -250,9 +250,25 @@ class Alley {
     private int count; // Number of vehicles in alley
 
 
+    /* Variables used for fairness */
+    public boolean isFair;
+    private int[] laps; // How many times alley used in each direction
+    private static final int DOWN = 0; // label array indices
+    private static final int UP = 1;
+
+
     public Alley() {
         goingUp = goingDown = false;
+        laps = new int[2];
         count = 0;
+        isFair = true; // Default to fair, maybe change this later
+    }
+
+    public Alley(boolean isFair) {
+        goingUp = goingDown = false;
+        laps = new int[2];
+        count = 0;
+        this.isFair = isFair;
     }
 
     private boolean canEnter(int no) {
@@ -262,18 +278,32 @@ class Alley {
             return !goingDown;
     }
 
-    private void radioIn(int no) {
-        // Let people know when you enter the alley
+    /**
+     * If true, the car will wait out of fairness for other drivers
+     *
+     * Will let all cars going in one direction finish before allowing
+     * cars in the other direction.
+     */
+    private boolean beFairAndWait(int no) {
         if (no <= 4)
-            goingDown = true;
+            return isFair && laps[DOWN] % 4 == 0 && laps[DOWN] > laps[UP];
         else
+            return isFair && laps[UP] % 4 == 0 && laps[UP] > laps[DOWN];
+    }
+
+    private void radioIn(int no) {
+        if (no <= 4) {
+            goingDown = true;
+            laps[DOWN]++;
+        } else {
             goingUp = true;
+            laps[UP]++;
+        }
         count++;
         access.signal();
     }
 
     private void radioOut(int no) {
-        // Let people know when you leave
         if (--count == 0)
             // Last car sends signal to those waiting that it's okay to enter
             goingUp = goingDown = false;
@@ -284,7 +314,7 @@ class Alley {
         mut.lock();
 
         try {
-            while (!canEnter(no))
+            while (beFairAndWait(no) || !canEnter(no))
                 access.await();            
             radioIn(no);
         } finally {
