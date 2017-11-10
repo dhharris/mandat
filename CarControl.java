@@ -205,11 +205,11 @@ class Car extends Thread {
                 // if the next position is past the barrier, sync
                 if (this.no != 0) {
                     if (newpos.row == barrierstop.row && newpos.col != 0) {
-                        barrier.sync(this.no);
+                        barrier.sync();
                     }
                 } else {
                     if (newpos.equals(barrierstop)) {
-                        barrier.sync(this.no);
+                        barrier.sync();
                     }
                 }
 
@@ -249,19 +249,17 @@ class Alley {
     private boolean goingDown;
     private int count; // Number of vehicles in alley
 
-
     /* Variables used for fairness */
     public boolean isFair;
     private int[] laps; // How many times alley used in each direction
     private static final int DOWN = 0; // label array indices
     private static final int UP = 1;
 
-
     public Alley() {
         goingUp = goingDown = false;
         laps = new int[2];
         count = 0;
-        isFair = true; // Default to fair, maybe change this later
+        isFair = false; // Default to unfair
     }
 
     public Alley(boolean isFair) {
@@ -315,7 +313,7 @@ class Alley {
 
         try {
             while (beFairAndWait(no) || !canEnter(no))
-                access.await();            
+                access.await();
             radioIn(no);
         } finally {
             mut.unlock();
@@ -324,75 +322,81 @@ class Alley {
 
     public void leave(int no) throws InterruptedException {
         mut.lock();
-        
+
         try {
-            radioOut(no); 
+            radioOut(no);
         } finally {
-            mut.unlock();    
+            mut.unlock();
         }
     }
 }
 
 class Barrier {
+    private final Lock mut = new ReentrantLock();
+    private final Condition cv = mut.newCondition();
 
-    Semaphore s1;
-    Semaphore s2;
-    int atBarrier;
-    boolean active = false;
-    int numcars;
+    private int numCars; // Total number of cars
+    private int count;
+    private int numLeft; // Number of cars that have yet to reach the barrier
+
+    private boolean active;
 
     public Barrier() {
-        // semaphore to mark the car arrived
-        s1 = new Semaphore(1);
-        // waiting for everyone
-        s2 = new Semaphore(0);
-        atBarrier = 0;
-        numcars = 8; // default, without no. 0
+        numLeft = count = numCars = 8; // default, without no. 0
+        active = false;
     }
 
-    public void sync(int no) throws InterruptedException {
-        if (active) {
-            s1.P();      // arrived
-            atBarrier++; // increment number of cars at barrier
+    public Barrier(int numCars) {
+        numLeft = count = this.numCars = numCars;
+        active = false;
+    }
 
-            // if everyone has arrived
-            if (atBarrier == numcars) {
-                atBarrier--; // last one didn't do s2.P(), so isn't waiting
-                while (atBarrier > 0) {
-                    s2.V(); // release one by one
-                    atBarrier--;
+    /*! IMPORTANT: Must be called in critical section */
+    public void reset() { numLeft = numCars; }
+
+    public void sync() throws InterruptedException {
+        mut.lock();
+        if (active) {
+            try {
+                // Have we seen all cars?
+                if (--numLeft == 0) {
+                    // Yes. Increment the counter to tell current waiters
+                    // that it is their turn
+                    ++count;
+                    cv.signal();
+                } else {
+                    int localCount = count;
+
+                    // Wait for count to change or the barrier to turn off
+                    while (localCount == count && active)
+                        cv.await();
                 }
-                s1.V(); // reset to defaults
-                // if not everyone has arrived
-            } else {
-                // release arrived flag
-                s1.V();
-                // start waiting for everyone else
-                s2.P();
+                cv.signal();
+
+                // Reset if this was the last car or inactive
+                if (numLeft == 0 || !active)
+                    reset();
+
+            } finally {
             }
         }
+        mut.unlock();
     }
 
-    public void on() {
-        active = true;
-        s1 = new Semaphore(1);
-        s2 = new Semaphore(0);
-    }
+    public void on() { active = true; }
 
     public void off() {
+        mut.lock();
         active = false;
-        while (atBarrier > 0) {
-            s2.V(); // release waiting cars one by one
-            atBarrier--;
-        }
-        s1.V(); // reset to defaults
+        cv.signal(); // Notify drivers that barrier is off
+        mut.unlock();
     }
 
     public boolean isOn() { return active; }
 
     public void setOn() { active = true; }
 
-    public void setNumcars(int n) { this.numcars = n; }
+    public void setNumcars(int n) { this.numCars = n; }
 }
 
 class CurPosMap {
@@ -457,12 +461,15 @@ public class CarControl implements CarControlI {
 
     public void stopCar(int no) {
         // SOFYA'S CODE
+        /*
+        // ?????
         if (no > 0) {
             if (barrier.isOn()) {
                 barrier.off();
                 barrier.setOn();
             }
         }
+        */
         // END
 
         gate[no].close();
