@@ -486,6 +486,13 @@ public class CarControl implements CarControlI {
 
     public void barrierOff() { barrier.off(); }
 
+    public void barrierSwitch() {
+        if (barrier.isOn())
+            barrier.off();
+        else
+            barrier.on();
+    }
+
     public void barrierShutDown() {
         cd.println("Barrier shut down not implemented in this version");
         // This sleep is for illustrating how blocking affects the GUI

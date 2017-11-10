@@ -883,6 +883,10 @@ public class Cars extends JFrame implements CarDisplayI {
     // The test thread activates these through the event queue via the
     // CarTestWrapper
 
+    public boolean barrierActive() {
+        return barrieractive;
+    }
+
     public void barrierOn() {
         gnd.showBarrier(true); 
         barrieractive = true;
@@ -1236,6 +1240,13 @@ class CarTestWrapper implements CarTestingI {
          EventQueue.invokeLater(new Runnable() {
             public void run() { cars.barrierOff(); }}
         );
+    }
+
+    public void barrierSwitch() {
+        if (cars.barrierActive())
+            barrierOff();
+        else
+            barrierOn();
     }
 
 
