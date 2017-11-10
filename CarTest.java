@@ -1,8 +1,8 @@
-//Prototype implementation of Car Test class
-//Mandatory assignment
-//Course 02158 Concurrent Programming, DTU, Fall 2017
+// Prototype implementation of Car Test class
+// Mandatory assignment
+// Course 02158 Concurrent Programming, DTU, Fall 2017
 
-//Hans Henrik Lovengreen     Oct 9, 2017
+// Hans Henrik Lovengreen     Oct 9, 2017
 
 public class CarTest extends Thread {
 
@@ -16,7 +16,7 @@ public class CarTest extends Thread {
 
     public void run() {
         try {
-            switch (testno) { 
+            switch (testno) {
             case 0:
                 // Demonstration of startAll/stopAll.
                 // Should let the cars go one round (unless very fast)
@@ -30,7 +30,7 @@ public class CarTest extends Thread {
                 // Change speed to double of default values
                 cars.println("Doubling speeds");
                 for (int i = 1; i < 9; i++) {
-                    cars.setSpeed(i,50);
+                    cars.setSpeed(i, 50);
                 };
                 break;
 
@@ -41,11 +41,7 @@ public class CarTest extends Thread {
             cars.println("Test ended");
 
         } catch (Exception e) {
-            System.err.println("Exception in test: "+e);
+            System.err.println("Exception in test: " + e);
         }
     }
-
 }
-
-
-
