@@ -64,7 +64,10 @@ class Car extends Thread {
     Pos curpos; // Current position
     Pos newpos; // New position to go to
 
-    // SOFYA'S CODE
+    /* Variables used for servicing */
+    boolean inTheShop = false;
+    private final Lock mut = new ReentrantLock();
+    private final Condition cv = mut.newCondition();
 
     // static alley object
     static Alley alley = new Alley();
@@ -72,6 +75,7 @@ class Car extends Thread {
     Pos alleyenter;
     // customizable position for alley exit
     Pos alleyleave;
+    boolean inAlley = false;
 
     // static map of positions to their semaphores
     static CurPosMap curMap = new CurPosMap();
@@ -81,15 +85,10 @@ class Car extends Thread {
     // customizable position for barrier stop
     Pos barrierstop;
 
-    // END
-
-    // SOFYA'S CODE -- added barrier to parameters
     public Car(int no, CarDisplayI cd, Gate g, Barrier barrier) {
 
         this.no = no;
         this.barrier = barrier;
-
-        // SOFYA'S CODE
 
         // customizing the alley entrance and exit positions
         switch (no) {
@@ -170,20 +169,51 @@ class Car extends Thread {
 
     boolean atGate(Pos pos) { return pos.equals(startpos); }
 
-    public void run() {
-        try {
 
+    // Reset to original position and speed
+    private void reset() throws InterruptedException {
             speed = chooseSpeed();
-
-            // SOFYA'S CODE
-            // lock the semaphore for the starting position of the car
-            curMap.get(startpos).P();
-            // END
-
             curpos = startpos;
             cd.mark(curpos, col, no);
+            inTheShop = false;
+    }
 
+    // Remove for servicing
+    public void remove() throws InterruptedException {
+            mut.lock();
+            if (!inTheShop) {
+                inTheShop = true;
+                // Make sure we arent in alley
+                if (inAlley) {
+                    alley.leave(this.no); 
+                    inAlley = false;
+                }
+            }
+            mut.unlock();
+    }
+    
+    // Restore from servicing
+    public void restore() throws InterruptedException {
+            mut.lock();
+            if (inTheShop) {
+                reset();
+                cv.signal();
+            }
+            mut.unlock();
+    }
+
+    public void run() {
+        try {
+            reset();
             while (true) {
+                mut.lock();
+                while (inTheShop) {
+                    cd.clear(curpos);
+                    curMap.get(curpos).V();
+                    cv.await();
+                }
+                mut.unlock();
+
                 sleep(speed());
 
                 if (atGate(curpos)) {
@@ -199,8 +229,10 @@ class Car extends Thread {
                 // else if the exit to alley, exit
                 if (newpos.equals(alleyenter)) {
                     alley.enter(this.no);
+                    inAlley = true;
                 } else if (newpos.equals(alleyleave)) {
                     alley.leave(this.no);
+                    inAlley = false;
                 }
                 // if the next position is past the barrier, sync
                 if (this.no != 0) {
@@ -232,6 +264,7 @@ class Car extends Thread {
                 cd.mark(newpos, col, no);
 
                 curpos = newpos;
+
             }
 
         } catch (Exception e) {
@@ -511,11 +544,20 @@ public class CarControl implements CarControlI {
     }
 
     public void removeCar(int no) {
-        cd.println("Remove Car not implemented in this version");
+        try {
+            car[no].remove();
+        } catch (InterruptedException e) {
+            cd.println("Unable to remove car " + no);
+        }
     }
 
     public void restoreCar(int no) {
-        cd.println("Restore Car not implemented in this version");
+        try {
+            car[no].restore();
+        } catch (InterruptedException e) {
+            cd.println("Unable to restore car " + no);
+        }
+
     }
 
     /* Speed settings for testing purposes */
