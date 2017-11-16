@@ -17,6 +17,7 @@ public class CarTest extends Thread {
     }
 
     public void run() {
+        int sleepTime;
         try {
             switch (testno) {
             case 0:
@@ -37,12 +38,51 @@ public class CarTest extends Thread {
 
             case 2:
                 // Demonstration of Barrier going on and off randomly
-                int sleepTime = 0;
+                sleepTime = 0;
                 cars.startAll();
                 while (sleepTime < TEST_TIME) {
                     int rand = ThreadLocalRandom.current().nextInt(2000, 3001);
                     sleep(rand);
                     cars.barrierSwitch();
+                    sleepTime += rand;
+                }
+                cars.stopAll();
+                break;
+
+            case 3:
+                // Demonstration of car 5 being serviced 
+                cars.startAll();
+                sleep(TEST_TIME / 3);
+
+                cars.println("Removing car 5");
+                cars.removeCar(5);
+
+                sleep(TEST_TIME / 3);
+
+                cars.println("Restoring car 5");
+                cars.restoreCar(5);
+
+                sleep(TEST_TIME / 3);
+                cars.stopAll();
+                break;
+
+            case 4:
+                // Demonstration of Barrier going on and off randomly
+                sleepTime = 0;
+                boolean isRemoved = false;
+                cars.startAll();
+                while (sleepTime < TEST_TIME) {
+                    int rand = ThreadLocalRandom.current().nextInt(2000, 3001);
+                    sleep(rand);
+                    if (!isRemoved) {
+                        cars.println("Removing car 5");
+                        cars.removeCar(5);
+                        isRemoved = true;
+                    } else {
+                        cars.println("Restoring car 5");
+                        cars.restoreCar(5);
+                        isRemoved = false;
+                    }
                     sleepTime += rand;
                 }
                 cars.stopAll();
