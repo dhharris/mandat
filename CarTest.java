@@ -67,7 +67,7 @@ public class CarTest extends Thread {
                 break;
 
             case 4:
-                // Demonstration of Barrier going on and off randomly
+                // Demonstration of car being removed at random times
                 sleepTime = 0;
                 boolean isRemoved = false;
                 cars.startAll();
