@@ -396,7 +396,6 @@ class Barrier {
                     // Yes. Increment the counter to tell current waiters
                     // that it is their turn
                     ++count;
-                    cv.signal();
                 } else {
                     int localCount = count;
 
